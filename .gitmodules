@@ -1,0 +1,3 @@
+[submodule "hemi"]
+	path = hemi
+	url = https://github.com/lordofhyphens/hemi.git
