@@ -13,19 +13,19 @@ LIB_FLAGS_64 := -L$(CUDA_PATH)/lib64
 
 LIB_FLAGS := $(LIB_FLAGS_$(ARCH)) -lcudart
 
-.PHONY: math clean
-all: math
+.PHONY: cuckoo clean
+all: cuckoo
 
-math: math_host_g++ math_host_nvcc math_device 
+cuckoo: cuckoo_host_g++ cuckoo_host_nvcc cuckoo_device 
 	for prog in $^; do \
 		./$$prog; \
 	done
 
-math_device: cuckoo_test.cpp
+cuckoo_device: cuckoo_test.cpp
 	${NVCC} ${LIB_FLAGS} -x cu ${CC_FLAGS} ${NVCC_FLAGS} $< -o $@
 
-math_host_g++: cuckoo_test.cpp
+cuckoo_host_g++: cuckoo_test.cpp
 	${CXX} ${LIB_FLAGS} ${CC_FLAGS} $< -o $@
 
-math_host_nvcc: cuckoo_test.cpp
+cuckoo_host_nvcc: cuckoo_test.cpp
 	${NVCC} ${LIB_FLAGS} ${CC_FLAGS} ${NVCC_FLAGS} $< -o $@
