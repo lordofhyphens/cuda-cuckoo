@@ -16,16 +16,19 @@ LIB_FLAGS := $(LIB_FLAGS_$(ARCH)) -lcudart
 .PHONY: cuckoo clean
 all: cuckoo
 
+clean: cuckoo_host_g++ cuckoo_host_nvcc cuckoo_device 
+	rm -f $^
 cuckoo: cuckoo_host_g++ cuckoo_host_nvcc cuckoo_device 
-	for prog in $^; do \
+	@for prog in $^; do \
+		echo "---------\nRunning $$prog\n---------"; \
 		./$$prog; \
 	done
 
-cuckoo_device: cuckoo_test.cpp
-	${NVCC} ${LIB_FLAGS} -x cu ${CC_FLAGS} ${NVCC_FLAGS} $< -o $@
+cuckoo_device: cuckoo_test.cpp cuckoo.h
+	@${NVCC} ${LIB_FLAGS} -x cu ${CC_FLAGS} ${NVCC_FLAGS} $< -o $@
 
-cuckoo_host_g++: cuckoo_test.cpp
-	${CXX} ${LIB_FLAGS} ${CC_FLAGS} $< -o $@
+cuckoo_host_g++: cuckoo_test.cpp cuckoo.h
+	@${CXX} ${LIB_FLAGS} ${CC_FLAGS} $< -o $@
 
-cuckoo_host_nvcc: cuckoo_test.cpp
-	${NVCC} ${LIB_FLAGS} ${CC_FLAGS} ${NVCC_FLAGS} $< -o $@
+cuckoo_host_nvcc: cuckoo_test.cpp cuckoo.h
+	@${NVCC} ${LIB_FLAGS} ${CC_FLAGS} ${NVCC_FLAGS} $< -o $@
