@@ -31,18 +31,6 @@ hemi::Array<unsigned int>hash_a(HEMI_CONSTANT(MAX_FUNCS), true);
 hemi::Array<unsigned int>hash_b(HEMI_CONSTANT(MAX_FUNCS), true);
 hemi::Array<bool> rebuild(1, true); 
 
-class HashFuncs
-{
-  const unsigned* hash_a;
-  const unsigned* hash_b;
-  public: 
-  HashFuncs(const unsigned* a, const unsigned* b) : hash_a(a), hash_b(b) { } 
-  HEMI_DEV_CALLABLE_INLINE_MEMBER unsigned int hashfunc(unsigned key, unsigned slots, unsigned int n) const {
-    return (hash_a[n] * key + hash_b[n]) % HEMI_CONSTANT(lg_prime) % slots;
-  }
-
-};
-
 class HEMI_ALIGN(16) CuckooTable
 {
   const unsigned*  hash_a;
@@ -74,7 +62,8 @@ class HEMI_ALIGN(16) CuckooTable
   {
     *h_rebuild = true;
   }
-  HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned int k,unsigned int v) const {
+  HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned int k,unsigned int v) const 
+  {
     unsigned int location_0 = hashfunc(k,0);
     unsigned int location_1 = hashfunc(k,1);
     unsigned int location_2 = hashfunc(k,2);
@@ -93,7 +82,8 @@ class HEMI_ALIGN(16) CuckooTable
     return entry;
   }
   // returns whether or not we were successful.
-  HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned int k, unsigned int v) {
+  HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned int k, unsigned int v) 
+  {
     unsigned long long entry = make_entry(k,v); // initial value to place into the table
     if (retrieve_hash(k,v) == entry) return true; // already in the table
     unsigned int key = k;
@@ -104,7 +94,8 @@ class HEMI_ALIGN(16) CuckooTable
     assert(v == get_value(entry));
     //printf("Initial: Putting (%x, %x) into position %u.\n", k, v, location);
 
-    for (int its = 0; its < HEMI_CONSTANT(MAX_ATTEMPTS); its++) {
+    for (int its = 0; its < HEMI_CONSTANT(MAX_ATTEMPTS); its++) 
+    {
       // insert new item and check for eviction
       // on gpu we use atomicexch, serial cpu just evicts and uses
       // a temp variable. MP cpu needs to have this part in a critical section.
@@ -135,7 +126,8 @@ class HEMI_ALIGN(16) CuckooTable
     return false; // too many attempts.
   }
   // just rebuilds the table itself. If the second int was an index, more problems.
-  HEMI_DEV_CALLABLE_INLINE void rebuild_table() {
+  HEMI_DEV_CALLABLE_INLINE void rebuild_table() 
+  {
     for (unsigned i = 0; i < size; i++) {
       if (table[i] != make_entry(HEMI_CONSTANT(EMPTY_KEY), 0)) // this can be distributed on the GPU, I think.
         insert_hash(get_key(table[i]), get_value(table[i]));
