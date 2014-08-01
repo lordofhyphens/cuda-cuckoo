@@ -45,8 +45,8 @@ class HashFuncs
 
 class HEMI_ALIGN(16) CuckooTable
 {
-  unsigned* const hash_a;
-  unsigned* const hash_b;
+  const unsigned*  hash_a;
+  const unsigned*  hash_b;
   public: 
   bool * const g_rebuild;
   bool * const h_rebuild; // using pinned (should be zero-copy) memory for this check. Hopefully performance doesn't suffer too much
@@ -55,7 +55,7 @@ class HEMI_ALIGN(16) CuckooTable
   // Stash to cover some hash collisions
   unsigned long long * const stash;
   const unsigned stash_size;
-  CuckooTable(unsigned* const a, unsigned* const b,  unsigned long long* t, const unsigned s, bool* grb, bool* hrb) : hash_a(a), hash_b(b), table(t), size(s), g_rebuild(grb), h_rebuild(hrb), stash(NULL), stash_size(0) { } 
+  CuckooTable(const unsigned* a, const unsigned* b,  unsigned long long* t, const unsigned s, bool* grb, bool* hrb) : hash_a(a), hash_b(b), table(t), size(s), g_rebuild(grb), h_rebuild(hrb), stash(NULL), stash_size(0) { } 
 
   // Makes a copy of a CuckooTable, preserving rebuild flag and hash functions.
   // Useful if we need to change the size of the storage array. Not recommended for co-sharing functions
@@ -74,7 +74,7 @@ class HEMI_ALIGN(16) CuckooTable
   {
     *h_rebuild = true;
   }
-  HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned int k,unsigned int v) {
+  HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned int k,unsigned int v) const {
     unsigned int location_0 = hashfunc(k,0);
     unsigned int location_1 = hashfunc(k,1);
     unsigned int location_2 = hashfunc(k,2);
@@ -142,6 +142,7 @@ class HEMI_ALIGN(16) CuckooTable
     }
   }
 };
+
 void load_hashvals(unsigned int seed = 0)
 {
   rebuild.writeOnlyHostPtr()[0] = false;
