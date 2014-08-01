@@ -43,35 +43,34 @@ class HashFuncs
 
 };
 
-class CuckooTable
+class HEMI_ALIGN(16) CuckooTable
 {
   const unsigned* hash_a;
   const unsigned* hash_b;
-  bool* g_rebuild;
-  bool* h_rebuild;
   public: 
+  bool* g_rebuild;
+  bool* h_rebuild; // using pinned (should be zero-copy) memory for this check. Hopefully performance doesn't suffer too much
    unsigned long long* table; 
-  CuckooTable(const unsigned* a, const unsigned* b,  unsigned long long* t, bool* grb, bool* hrb) : hash_a(a), hash_b(b), table(t), g_rebuild(grb), h_rebuild(hrb) { } 
-  HEMI_DEV_CALLABLE_INLINE_MEMBER unsigned int hashfunc(unsigned key, unsigned slots, unsigned int n) const {
-    return (hash_a[n] * key + hash_b[n]) % HEMI_CONSTANT(lg_prime) % slots;
+   const unsigned size;
+  CuckooTable(const unsigned* a, const unsigned* b,  unsigned long long* t, const unsigned s, bool* grb, bool* hrb) : hash_a(a), hash_b(b), table(t), size(s), g_rebuild(grb), h_rebuild(hrb) { } 
+
+  // Makes a copy of a CuckooTable, preserving rebuild flag and hash functions.
+  // Useful if we need to change the size of the storage array. Not recommended for co-sharing functions
+ 
+  CuckooTable(CuckooTable ct, unsigned long long* t, const unsigned s) : hash_a(ct.hash_a), hash_b(ct.hash_b), table(t), size(s), g_rebuild(ct.g_rebuild), h_rebuild(ct.h_rebuild) {}
+  
+  HEMI_DEV_CALLABLE_INLINE_MEMBER unsigned int hashfunc(unsigned key, unsigned int n) const 
+  {
+    return (hash_a[n] * key + hash_b[n]) % HEMI_CONSTANT(lg_prime) % size;
   }
   HEMI_DEV_CALLABLE_INLINE_MEMBER bool needsRebuild() const
   {
-    #ifdef HEMI_DEV_CODE
-      return *g_rebuild;
-    #else
       return *h_rebuild;
-    #endif
   }
   HEMI_DEV_CALLABLE_INLINE_MEMBER void setRebuild()
   {
-    #ifdef HEMI_DEV_CODE
-      *g_rebuild = true;
-    #else
       *h_rebuild = true;
-    #endif
   }
-
 };
 void load_hashvals(unsigned int seed = 0)
 {
@@ -86,12 +85,12 @@ void load_hashvals(unsigned int seed = 0)
 	}
 }
 
-HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned long long* table,unsigned int k,unsigned int v, unsigned int SIZE, const CuckooTable hash) {
-	unsigned int location_0 = hash.hashfunc(k,SIZE,0);
-	unsigned int location_1 = hash.hashfunc(k,SIZE,1);
-	unsigned int location_2 = hash.hashfunc(k,SIZE,2);
-	unsigned int location_3 = hash.hashfunc(k,SIZE,3);
-	unsigned int location_4 = hash.hashfunc(k,SIZE,4);
+HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned long long* table,unsigned int k,unsigned int v, const CuckooTable hash) {
+	unsigned int location_0 = hash.hashfunc(k,0);
+	unsigned int location_1 = hash.hashfunc(k,1);
+	unsigned int location_2 = hash.hashfunc(k,2);
+	unsigned int location_3 = hash.hashfunc(k,3);
+	unsigned int location_4 = hash.hashfunc(k,4);
 
 	unsigned long long entry;
 	if(get_key(entry = table[location_0]) != k)
@@ -113,28 +112,25 @@ void initCuckooArray(unsigned long long* table, unsigned int SIZE)
   }
 }
 // returns whether or not we were successful.
-HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned long long* table, unsigned int k, unsigned int v, unsigned int SIZE, CuckooTable hash) {
+HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned long long* table, unsigned int k, unsigned int v,CuckooTable hash) {
 	unsigned long long entry = make_entry(k,v); // initial value to place into the table
-	if (retrieve_hash(table, k,v, SIZE, hash) == entry) return true; // already in the table
+	if (retrieve_hash(table, k,v,hash) == entry) return true; // already in the table
 	unsigned int key = k;
 
 	// initial location
-	unsigned int location = hash.hashfunc(k, SIZE, 0);
+	unsigned int location = hash.hashfunc(k, 0);
   assert(k == get_key(entry));
   assert(v == get_value(entry));
-  printf("Initial: Putting (%x, %x) into position %u.\n", k, v, location);
+  //printf("Initial: Putting (%x, %x) into position %u.\n", k, v, location);
 
 	for (int its = 0; its < HEMI_CONSTANT(MAX_ATTEMPTS); its++) {
 		// insert new item and check for eviction
 		// on gpu we use atomicexch, serial cpu just evicts and uses
 		// a temp variable. MP cpu needs to have this part in a critical section.
 		//
-    printf("Trying to put (%x, %x) in location %u\n", get_key(entry), get_value(entry), location);
+//    printf("Trying to put (%x, %x) in location %u\n", get_key(entry), get_value(entry), location);
 		entry = hemi::atomicExch(table+location,entry);
-    #ifdef HEMI_DEV_CODE
-      __syncthreads();
-    #endif
-    printf("(%x, %x) was in location %u\n", get_key(entry), get_value(entry), location);
+//    printf("(%x, %x) was in location %u\n", get_key(entry), get_value(entry), location);
 
 
 		key = get_key(entry);
@@ -142,11 +138,11 @@ HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned long long* table, unsigned in
 		// if we had an eviction, figure out the next function to use, 
 		// round-robin.
 
-    unsigned int location_0 = hash.hashfunc(k,SIZE,0);
-    unsigned int location_1 = hash.hashfunc(k,SIZE,1);
-    unsigned int location_2 = hash.hashfunc(k,SIZE,2);
-    unsigned int location_3 = hash.hashfunc(k,SIZE,3);
-    unsigned int location_4 = hash.hashfunc(k,SIZE,4);
+    unsigned int location_0 = hash.hashfunc(k,0);
+    unsigned int location_1 = hash.hashfunc(k,1);
+    unsigned int location_2 = hash.hashfunc(k,2);
+    unsigned int location_3 = hash.hashfunc(k,3);
+    unsigned int location_4 = hash.hashfunc(k,4);
 		     if (location == location_0) location = location_1;
 		else if (location == location_1) location = location_2;
 		else if (location == location_2) location = location_3;
@@ -159,10 +155,10 @@ HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned long long* table, unsigned in
 }
 
 // just rebuilds the table itself. If the second int was an index, more problems.
-HEMI_DEV_CALLABLE_INLINE void rebuild_table(unsigned long long* table, unsigned int SIZE, const CuckooTable hash) {
-	for (unsigned i = 0; i < SIZE; i++) {
+HEMI_DEV_CALLABLE_INLINE void rebuild_table(unsigned long long* table, const CuckooTable hash) {
+	for (unsigned i = 0; i < hash.size; i++) {
 		if (table[i] != make_entry(HEMI_CONSTANT(EMPTY_KEY), 0)) // this can be distributed on the GPU, I think.
-			insert_hash(table, get_key(table[i]), get_value(table[i]), SIZE, hash);
+			insert_hash(table, get_key(table[i]), get_value(table[i]),  hash);
 	}
 }
 

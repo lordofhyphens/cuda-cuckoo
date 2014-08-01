@@ -3,6 +3,7 @@
 #include "cuckoo.h"
 
 #define HT_SIZE 500
+#define DEBUG
 
 HEMI_KERNEL(testCuckooInit)(const unsigned long long* table, unsigned SIZE) 
 {
@@ -19,10 +20,10 @@ HEMI_KERNEL(testCuckooInsert)(unsigned key, unsigned item, CuckooTable hf)
   bool test;
   unsigned long long testEntry;
   unsigned long long origEntry = make_entry(key, item);
-  test = insert_hash(hf.table, key, item, HT_SIZE, hf);
-  testEntry = retrieve_hash(hf.table, key, item, HT_SIZE, hf);
-  printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
-  printf("Hash value retrieved: %lx - (%x, %x) -- %lx\n", testEntry, get_key(testEntry), get_value(testEntry), origEntry);
+  test = insert_hash(hf.table, key, item, hf);
+  testEntry = retrieve_hash(hf.table, key, item, hf);
+  //printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
+  //printf("Hash value retrieved: %lx - (%x, %x) -- %lx\n", testEntry, get_key(testEntry), get_value(testEntry), origEntry);
   assert(testEntry == origEntry);
 }
 HEMI_KERNEL(testCuckooInsertTooMany)(unsigned key, unsigned item, CuckooTable hf)
@@ -30,10 +31,14 @@ HEMI_KERNEL(testCuckooInsertTooMany)(unsigned key, unsigned item, CuckooTable hf
   bool test;
   unsigned long long testEntry;
   unsigned long long origEntry = make_entry(key, item);
-  test = insert_hash(hf.table, key, item, HT_SIZE, hf);
-  testEntry = retrieve_hash(hf.table, key, item, HT_SIZE, hf);
-  printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
-  printf("Hash value retrieved: %lx - (%u, %u) -- %lx\n", testEntry, get_key(testEntry), get_value(testEntry), origEntry);
+  test = insert_hash(hf.table, key, item, hf);
+  testEntry = retrieve_hash(hf.table, key, item, hf);
+  if (!test)
+  {
+    printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
+  }
+ // printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
+ // printf("Hash value retrieved: %lx - (%u, %u) -- %lx\n", testEntry, get_key(testEntry), get_value(testEntry), origEntry);
 }
 
 int main() 
@@ -51,19 +56,38 @@ int main()
   int testInsert = 5;
   int key = 23423;
   initCuckooArray(hashTable.writeOnlyHostPtr(), HT_SIZE);
-  CuckooTable hf = CuckooTable(hash_a.readOnlyPtr(), hash_b.readOnlyPtr(),hashTable.ptr(),rebuild.ptr(),rebuild.ptr(hemi::host)); 
+  CuckooTable hf = CuckooTable(hash_a.readOnlyPtr(), hash_b.readOnlyPtr(),hashTable.ptr(), HT_SIZE, rebuild.ptr(),rebuild.ptr(hemi::host)); 
   printf("Data initialized.\n");
   HEMI_KERNEL_LAUNCH(testCuckooInit, gridDim, blockDim, 0, 0, hashTable.readOnlyPtr(), HT_SIZE);
+    #ifdef HEMI_CUDA_COMPILER
+      cudaDeviceSynchronize();
+    #endif
+  printf("Testing insert.\n");
   HEMI_KERNEL_LAUNCH(testCuckooInsert, gridDim, blockDim, 0, 0, key, testInsert, hf);
-  for (int i = 0; i < HT_SIZE+1; i++) {
+    #ifdef HEMI_CUDA_COMPILER
+      cudaDeviceSynchronize();
+    #endif
+
+
+  printf("Testing too many inserts (rebuild flag).\n");
+  for (int i = 0; i < hf.size+1; i++) {
     HEMI_KERNEL_LAUNCH(testCuckooInsertTooMany, gridDim, blockDim, 0, 0, i * 73, i, hf);
+    
+    #ifdef HEMI_CUDA_COMPILER
+      cudaDeviceSynchronize();
+    #endif
     if (rebuild.readOnlyPtr(hemi::host)[0] == true)
     {
       // we have run into a problem 
-      printf("Detected insert failure for table of size %d! Need to generate new functions and try again.\n");
-      rebuild.writeOnlyPtr(hemi::host)[0] == false;
+      printf("Detected insert failure for %dth element for table of size %d! Need to generate new functions and try again.\n", i, hf.size);
       i = HT_SIZE+1; continue;
     }
   }
+  #ifdef HEMI_CUDA_COMPILER
+    cudaDeviceSynchronize();
+  #endif
+
+  printf("Rebuild flag: %s\n", (rebuild.readOnlyPtr(hemi::host)[0] == true ? "True" : "False"));
+  assert(rebuild.readOnlyPtr(hemi::host)[0] == true);
   return 0;
 }
