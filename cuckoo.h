@@ -35,15 +35,17 @@ class HEMI_ALIGN(16) CuckooTable
 {
   const unsigned*  hash_a;
   const unsigned*  hash_b;
+  bool * const h_rebuild; // using pinned (should be zero-copy) memory for this check. Hopefully performance doesn't suffer too much
   public: 
   bool * const g_rebuild;
-  bool * const h_rebuild; // using pinned (should be zero-copy) memory for this check. Hopefully performance doesn't suffer too much
   unsigned long long * const table; 
   const unsigned size;
   // Stash to cover some hash collisions
   unsigned long long * const stash;
   const unsigned stash_size;
   CuckooTable(const unsigned* a, const unsigned* b,  unsigned long long* t, const unsigned s, bool* grb, bool* hrb) : hash_a(a), hash_b(b), table(t), size(s), g_rebuild(grb), h_rebuild(hrb), stash(NULL), stash_size(0) { } 
+
+  CuckooTable(const unsigned* a, const unsigned* b,  unsigned long long* t, const unsigned s, unsigned long long* st, const unsigned st_s, bool* grb, bool* hrb) : hash_a(a), hash_b(b), table(t), size(s), g_rebuild(grb), h_rebuild(hrb), stash(st), stash_size(st_s) { } 
 
   // Makes a copy of a CuckooTable, preserving rebuild flag and hash functions.
   // Useful if we need to change the size of the storage array. Not recommended for co-sharing functions
@@ -64,6 +66,27 @@ class HEMI_ALIGN(16) CuckooTable
   }
   HEMI_DEV_CALLABLE_INLINE unsigned long long int retrieve_hash(unsigned int k,unsigned int v) const 
   {
+    unsigned int slot = get_slot(k,v);
+    if (slot < size)
+      return table[slot];
+    else if(slot < stash_size+size)
+      return stash[slot-size];
+    else
+      return HEMI_CONSTANT(EMPTY_SLOT);
+  }
+
+  // Delete an item from the hashmap.
+  HEMI_DEV_CALLABLE_INLINE void remove(unsigned int k, unsigned int v)
+  {
+    unsigned int slot = get_slot(k,v);
+    if (slot < size)
+      table[slot] = HEMI_CONSTANT(EMPTY_SLOT);
+    else if(slot < stash_size+size)
+      stash[slot-size] = HEMI_CONSTANT(EMPTY_SLOT);
+  }
+  // Returns an unsigned integer index 0 <= i < stash_size+table_size, or stash_size+table_size if not found.
+  HEMI_DEV_CALLABLE_INLINE unsigned int get_slot(unsigned int k, unsigned int v) const
+  {
     unsigned int location_0 = hashfunc(k,0);
     unsigned int location_1 = hashfunc(k,1);
     unsigned int location_2 = hashfunc(k,2);
@@ -71,16 +94,42 @@ class HEMI_ALIGN(16) CuckooTable
     unsigned int location_4 = hashfunc(k,4);
 
     unsigned long long entry;
+    unsigned int slot = 0;
     if(get_key(entry = table[location_0]) != k)
       if(get_key(entry = table[location_1]) != k)
         if(get_key(entry = table[location_2]) != k)
           if(get_key(entry = table[location_3]) != k)
             if(get_key(entry = table[location_4]) != k)
               entry = make_entry(HEMI_CONSTANT(EMPTY_KEY), 0);
-    if (get_value(entry) != v) 
+            else slot = location_4;
+          else slot = location_3;
+        else slot = location_2;
+      else slot = location_1;
+    else slot = location_0;
+    if (get_value(entry) != v) {
+      slot = size-1; // didn't have a match, tme for the stash
       entry = make_entry(HEMI_CONSTANT(EMPTY_KEY), 0);
-    return entry;
+    }
+    // If not present, see if there's room in the stash.
+    if (entry == HEMI_CONSTANT(EMPTY_SLOT)) 
+    { 
+      if (stash_size > 0) {
+        int cntr = 0;
+        while ((get_key(entry) != k && get_value(entry) != v) && cntr < stash_size ) 
+        {
+          slot++;
+          entry = stash[cntr];
+          cntr++;
+        }
+        slot++;
+      } else {
+        slot++;
+      }
+    }
+    assert(slot <= (stash_size+size));
+    return slot; // should correspond to a value < size if it's in the table itself or > size < stash+size if it's in the stash
   }
+
   // returns whether or not we were successful.
   HEMI_DEV_CALLABLE_INLINE bool insert_hash(unsigned int k, unsigned int v) 
   {
@@ -122,6 +171,20 @@ class HEMI_ALIGN(16) CuckooTable
       else location = location_0;
 
     }
+    // If too many attempts, see if there's room in the stash.
+    if (stash_size > 0) 
+    {
+      int cntr = 0;
+      while (entry != HEMI_CONSTANT(EMPTY_SLOT) && cntr < stash_size ) 
+      {
+        entry = hemi::atomicExch(stash+cntr,entry); cntr++;
+      }
+      if (entry == HEMI_CONSTANT(EMPTY_SLOT)) 
+      {
+        return true;
+      }
+    } 
+
     setRebuild();
     return false; // too many attempts.
   }
@@ -135,7 +198,7 @@ class HEMI_ALIGN(16) CuckooTable
   }
 };
 
-void load_hashvals(unsigned int seed = 0)
+void load_hashvals(hemi::Array<unsigned int>& hash_a, hemi::Array<unsigned int>& hash_b, unsigned int seed = 0)
 {
   rebuild.writeOnlyHostPtr()[0] = false;
   if (seed != 0) 
@@ -153,7 +216,7 @@ void initCuckooArray(unsigned long long* table, unsigned int SIZE)
   rebuild.writeOnlyHostPtr()[0] = false;
   for (int i = 0; i < SIZE; i++) 
   {
-    table[i] = make_entry(HEMI_CONSTANT(EMPTY_KEY), 0);
+    table[i] = HEMI_CONSTANT(EMPTY_SLOT);
   }
 }
 
