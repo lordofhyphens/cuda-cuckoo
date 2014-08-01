@@ -23,6 +23,8 @@ The CuckooTable class itself is the center of all of this. You need to allocate 
 
 The reason for all this is that, at least with hemi::array, the structs themselves aren't portable across the device and host. Instead hemi::array exposes pointers to allow for migrating data to/from the host.
 
+The usage itself is pretty straightforward. Insert with `insert_hash(key,value)`. Retrieve with `retrieve_hash(key, value)`. Both values need to resolve to an unsigned integer that fits into 32 bits, as the pair form a 64-bit integer. 
+
 ##Gotchas: 
 
 If you're using hemi::array for the values, you have to set up the host memory area (particularly the hash functions and table space) before creating a CuckooTable. This is because hemi::array determines which is the "active" copy (host or device) when one of the ptr() functions are called. To work around this, you would need to force a copy-back and then call devicePtr() to ensure everything is sync'd.
