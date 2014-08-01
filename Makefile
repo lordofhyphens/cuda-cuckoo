@@ -16,8 +16,8 @@ LIB_FLAGS := $(LIB_FLAGS_$(ARCH)) -lcudart
 .PHONY: cuckoo clean
 all: cuckoo
 
-clean: cuckoo_host_g++ cuckoo_host_nvcc cuckoo_device 
-	rm -f $^
+clean: 
+	rm -f cuckoo_host_g++ cuckoo_host_nvcc cuckoo_device 
 cuckoo: cuckoo_host_g++ cuckoo_host_nvcc cuckoo_device 
 	@for prog in $^; do \
 		echo "---------\nRunning $$prog\n---------"; \
