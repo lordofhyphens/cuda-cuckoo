@@ -20,8 +20,8 @@ HEMI_KERNEL(testCuckooInsert)(unsigned key, unsigned item, CuckooTable hf)
   bool test;
   unsigned long long testEntry;
   unsigned long long origEntry = make_entry(key, item);
-  test = insert_hash(hf.table, key, item, hf);
-  testEntry = retrieve_hash(hf.table, key, item, hf);
+  test = hf.insert_hash(key, item);
+  testEntry = hf.retrieve_hash(key, item);
   //printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
   //printf("Hash value retrieved: %lx - (%x, %x) -- %lx\n", testEntry, get_key(testEntry), get_value(testEntry), origEntry);
   assert(testEntry == origEntry);
@@ -31,8 +31,8 @@ HEMI_KERNEL(testCuckooInsertTooMany)(unsigned key, unsigned item, CuckooTable hf
   bool test;
   unsigned long long testEntry;
   unsigned long long origEntry = make_entry(key, item);
-  test = insert_hash(hf.table, key, item, hf);
-  testEntry = retrieve_hash(hf.table, key, item, hf);
+  test = hf.insert_hash(key, item);
+  testEntry = hf.retrieve_hash(key, item);
   if (!test)
   {
     printf("Insert of (%d, %d): %s\n", key, item, (test == true ? "Success" : "Failure"));
